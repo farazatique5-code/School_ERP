@@ -22,7 +22,7 @@ function ReportsHubContent() {
   const [error, setError] = useState<string | null>(null);
 
   const selected = REPORT_DEFINITIONS.find((r) => r.id === selectedId);
-  const grouped = Object.groupBy ? Object.groupBy(REPORT_DEFINITIONS, (r) => r.module) : groupByModule(REPORT_DEFINITIONS);
+  const grouped = groupByModule(REPORT_DEFINITIONS);
 
   const runReport = async () => {
     if (!selected || !activeSchoolId) return;
