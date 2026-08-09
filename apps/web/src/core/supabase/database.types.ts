@@ -1,12 +1,33 @@
 // core/supabase/database.types.ts
 //
-// GENERATED FILE — normally produced by:
-//   supabase gen types typescript --local > src/core/supabase/database.types.ts
-// Regenerate after every migration in supabase/migrations/. Do not hand-edit
-// table shapes; hand-editing is only acceptable for the Json type helper below.
-// This file currently reflects migrations 001 and 002.
+// GENERATED-FILE STAND-IN — see docs/phase-2-README.md: this was
+// hand-written for Phase 1-2's ~12 tables and was never extended for
+// the ~70 tables added in Phases 3-16, which caused every query against
+// those tables to collapse to type `never` (TS2339/TS2353 everywhere).
+//
+// Fix applied: unknown table/function names now fall back to a
+// permissive Record<string, any> shape via the index signatures below,
+// instead of not existing at all. Tables explicitly defined keep their
+// real types; anything else is loosely typed rather than broken.
+//
+// This restores buildability but is NOT full type safety. The correct
+// long-term fix is regenerating this file for real:
+//   npx supabase gen types typescript --linked > src/core/supabase/database.types.ts
+// Do that once you can run the Supabase CLI, then this stand-in (and its
+// permissive fallback) is no longer needed.
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
+interface PermissiveTable {
+  Row: Record<string, any>;
+  Insert: Record<string, any>;
+  Update: Record<string, any>;
+}
+
+interface PermissiveFunction {
+  Args: Record<string, any>;
+  Returns: any;
+}
 
 export interface Database {
   public: {
@@ -195,6 +216,11 @@ export interface Database {
         Insert: Partial<Database['public']['Tables']['sections']['Row']> & { class_id: string; name: string };
         Update: Partial<Database['public']['Tables']['sections']['Row']>;
       };
+
+      // Every other table (students, admissions, attendance, employees,
+      // timetable, exams, fees, library, inventory, hostel, transport,
+      // portals, ai_* — everything from Phase 3 onward) falls back here:
+      [tableName: string]: PermissiveTable;
     };
     Functions: {
       provision_organization: {
@@ -212,6 +238,11 @@ export interface Database {
       auth_organization_id: { Args: Record<string, never>; Returns: string };
       auth_has_permission: { Args: { perm_key: string }; Returns: boolean };
       auth_has_school_access: { Args: { target_school_id: string }; Returns: boolean };
+
+      // Every other RPC (generate_student_code, admit_and_enroll_student,
+      // generate_fee_plan, fn_issue_book, fn_allocate_bed,
+      // fn_student_risk_scores, etc.) falls back here:
+      [functionName: string]: PermissiveFunction;
     };
   };
 }
