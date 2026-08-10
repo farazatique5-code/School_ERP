@@ -1,6 +1,5 @@
 // core/supabase/client.ts
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from './database.types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -11,9 +10,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// Typed against the generated Database type so every .from('table') call
-// is checked against the real schema at compile time.
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+// Deliberately NOT parameterized with <Database>. Passing a strict schema
+// type here makes Supabase's compile-time query parser try to verify every
+// joined `.select('*, foo(...)')` against a real Relationships (foreign
+// key) array — which our generated-types stand-in doesn't have populated
+// with real data, so it rejected every join as an unverifiable relationship
+// (SelectQueryError). Untyped mode skips that verification entirely.
+// Once you regenerate database.types.ts for real via the Supabase CLI
+// (which DOES populate real Relationships data), re-add <Database> here.
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
