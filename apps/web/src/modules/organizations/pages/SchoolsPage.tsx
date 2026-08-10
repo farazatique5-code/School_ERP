@@ -104,7 +104,7 @@ function SchoolFormDrawer({
   onClose,
 }: {
   editingId: string | null;
-  existing?: SchoolInput & { id: string };
+  existing?: any;
   onClose: () => void;
 }) {
   const create = useCreateSchool();
