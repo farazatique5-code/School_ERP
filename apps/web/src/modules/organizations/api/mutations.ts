@@ -21,7 +21,16 @@ export async function signUpOrganization(input: SignUpInput) {
 
   const response = await fetch(PROVISION_FUNCTION_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // Required even though no user is signed in yet — Supabase's Edge
+      // Function gateway rejects any request with no Authorization header
+      // at all (401, before your function code even runs). For a public,
+      // pre-auth flow like sign-up, the anon key is the correct credential
+      // to send; it identifies the request as coming from this app's
+      // public API access, not from a specific logged-in user.
+      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+    },
     body: JSON.stringify(parsed),
   });
 
