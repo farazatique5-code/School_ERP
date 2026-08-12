@@ -11,97 +11,128 @@ import { z } from "https://esm.sh/zod@3.23.8";
 
 const signupSchema = z.object({
   fullName: z.string().min(1).max(200),
-  email: z.string().email(),
-  password: z.string().min(8).max(128),
-  organizationName: z.string().min(2).max(200),
-  organizationSlug: z
-    .string()
-    .min(2)
-    .max(63)
-    .regex(/^[a-z0-9-]+$/, "slug must be lowercase letters, numbers, hyphens only"),
-  schoolName: z.string().min(2).max(200),
-  schoolCode: z
-    .string()
-    .min(1)
-    .max(20)
-    .regex(/^[A-Z0-9]+$/, "school code must be uppercase letters/numbers"),
-});
+    email: z.string().email(),
+      password: z.string().min(8).max(128),
+        organizationName: z.string().min(2).max(200),
+          organizationSlug: z
+              .string()
+                  .min(2)
+                      .max(63)
+                          .regex(/^[a-z0-9-]+$/, "slug must be lowercase letters, numbers, hyphens only"),
+                            schoolName: z.string().min(2).max(200),
+                              schoolCode: z
+                                  .string()
+                                      .min(1)
+                                          .max(20)
+                                              .regex(/^[A-Z0-9]+$/, "school code must be uppercase letters/numbers"),
+                                              });
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+                                              const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+                                              const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-Deno.serve(async (req: Request) => {
-  if (req.method !== "POST") {
-    return jsonResponse({ error: { code: "method_not_allowed", message: "POST only" } }, 405);
-  }
+                                              // Browsers send an OPTIONS "preflight" request before any real
+                                              // cross-origin POST, and refuse to send (or read the response of) the
+                                              // real request unless every response — including this preflight one —
+                                              // carries these headers. Missing this is why sign-up silently failed
+                                              // even after the Authorization header fix: the browser never let the
+                                              // actual POST's response through.
+                                              const corsHeaders = {
+                                                "Access-Control-Allow-Origin": "*",
+                                                  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+                                                    "Access-Control-Allow-Methods": "POST, OPTIONS",
+                                                    };
 
-  let input: z.infer<typeof signupSchema>;
-  try {
-    const body = await req.json();
-    input = signupSchema.parse(body);
-  } catch (err) {
-    return jsonResponse(
-      { error: { code: "invalid_input", message: err instanceof Error ? err.message : "Invalid request body" } },
-      400,
-    );
-  }
+                                                    Deno.serve(async (req: Request) => {
+                                                      if (req.method === "OPTIONS") {
+                                                          return new Response(null, { status: 204, headers: corsHeaders });
+                                                            }
 
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+                                                              if (req.method !== "POST") {
+                                                                  return jsonResponse({ error: { code: "method_not_allowed", message: "POST only" } }, 405);
+                                                                    }
 
-  // Step 1: create the auth user.
-  const { data: userData, error: userError } = await admin.auth.admin.createUser({
-    email: input.email,
-    password: input.password,
-    email_confirm: false, // a confirmation email is sent through the normal Supabase auth flow
-    user_metadata: { full_name: input.fullName },
-  });
+                                                                      let input: z.infer<typeof signupSchema>;
+                                                                        try {
+                                                                            const body = await req.json();
+                                                                                input = signupSchema.parse(body);
+                                                                                  } catch (err) {
+                                                                                      return jsonResponse(
+                                                                                            { error: { code: "invalid_input", message: err instanceof Error ? err.message : "Invalid request body" } },
+                                                                                                  400,
+                                                                                                      );
+                                                                                                        }
 
-  if (userError || !userData?.user) {
-    return jsonResponse(
-      { error: { code: "user_creation_failed", message: userError?.message ?? "Could not create user" } },
-      400,
-    );
-  }
+                                                                                                          const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+                                                                                                              auth: { autoRefreshToken: false, persistSession: false },
+                                                                                                                });
 
-  const userId = userData.user.id;
+                                                                                                                  // Step 1: create the auth user.
+                                                                                                                    const { data: userData, error: userError } = await admin.auth.admin.createUser({
+                                                                                                                        email: input.email,
+                                                                                                                            password: input.password,
+                                                                                                                                // Auto-confirmed deliberately. The comment that used to be here
+                                                                                                                                    // ("a confirmation email is sent through the normal Supabase auth
+                                                                                                                                        // flow") was wrong: admin.createUser() never sends a confirmation
+                                                                                                                                            // email on its own — only the client-side supabase.auth.signUp()
+                                                                                                                                                // does that automatically. Leaving this false created every new
+                                                                                                                                                    // organization owner's account permanently stuck unconfirmed, with
+                                                                                                                                                        // no email ever sent and no way to confirm it — which is exactly
+                                                                                                                                                            // why the very next step (signing them in immediately) failed.
+                                                                                                                                                                // Since they just filled out the whole sign-up form themselves and
+                                                                                                                                                                    // set their own password in this same flow, auto-confirming here is
+                                                                                                                                                                        // the correct choice — this is different from invite-employee and
+                                                                                                                                                                            // invite-portal-user, which correctly use inviteUserByEmail and
+                                                                                                                                                                                // SHOULD stay unconfirmed until the invited person clicks their
+                                                                                                                                                                                    // email link.
+                                                                                                                                                                                        email_confirm: true,
+                                                                                                                                                                                            user_metadata: { full_name: input.fullName },
+                                                                                                                                                                                              });
 
-  // Step 2: provision the organization/school/roles/profile atomically via RPC.
-  // If this fails, roll back the auth user so we never leave an orphaned
-  // login with no organization attached.
-  const { data: provisionData, error: provisionError } = await admin.rpc("provision_organization", {
-    p_user_id: userId,
-    p_user_email: input.email,
-    p_user_full_name: input.fullName,
-    p_org_name: input.organizationName,
-    p_org_slug: input.organizationSlug,
-    p_school_name: input.schoolName,
-    p_school_code: input.schoolCode,
-  });
+                                                                                                                                                                                                if (userError || !userData?.user) {
+                                                                                                                                                                                                    return jsonResponse(
+                                                                                                                                                                                                          { error: { code: "user_creation_failed", message: userError?.message ?? "Could not create user" } },
+                                                                                                                                                                                                                400,
+                                                                                                                                                                                                                    );
+                                                                                                                                                                                                                      }
 
-  if (provisionError) {
-    await admin.auth.admin.deleteUser(userId); // compensating action — no orphaned auth user
-    const isSlugConflict = provisionError.message?.includes("slug_taken");
-    return jsonResponse(
-      {
-        error: {
-          code: isSlugConflict ? "slug_taken" : "provisioning_failed",
-          message: isSlugConflict
-            ? "That organization URL is already taken. Please choose another."
-            : provisionError.message,
-        },
-      },
-      isSlugConflict ? 409 : 500,
-    );
-  }
+                                                                                                                                                                                                                        const userId = userData.user.id;
 
-  return jsonResponse({ data: provisionData }, 201);
-});
+                                                                                                                                                                                                                          // Step 2: provision the organization/school/roles/profile atomically via RPC.
+                                                                                                                                                                                                                            // If this fails, roll back the auth user so we never leave an orphaned
+                                                                                                                                                                                                                              // login with no organization attached.
+                                                                                                                                                                                                                                const { data: provisionData, error: provisionError } = await admin.rpc("provision_organization", {
+                                                                                                                                                                                                                                    p_user_id: userId,
+                                                                                                                                                                                                                                        p_user_email: input.email,
+                                                                                                                                                                                                                                            p_user_full_name: input.fullName,
+                                                                                                                                                                                                                                                p_org_name: input.organizationName,
+                                                                                                                                                                                                                                                    p_org_slug: input.organizationSlug,
+                                                                                                                                                                                                                                                        p_school_name: input.schoolName,
+                                                                                                                                                                                                                                                            p_school_code: input.schoolCode,
+                                                                                                                                                                                                                                                              });
 
-function jsonResponse(body: unknown, status: number) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+                                                                                                                                                                                                                                                                if (provisionError) {
+                                                                                                                                                                                                                                                                    await admin.auth.admin.deleteUser(userId); // compensating action — no orphaned auth user
+                                                                                                                                                                                                                                                                        const isSlugConflict = provisionError.message?.includes("slug_taken");
+                                                                                                                                                                                                                                                                            return jsonResponse(
+                                                                                                                                                                                                                                                                                  {
+                                                                                                                                                                                                                                                                                          error: {
+                                                                                                                                                                                                                                                                                                    code: isSlugConflict ? "slug_taken" : "provisioning_failed",
+                                                                                                                                                                                                                                                                                                              message: isSlugConflict
+                                                                                                                                                                                                                                                                                                                          ? "That organization URL is already taken. Please choose another."
+                                                                                                                                                                                                                                                                                                                                      : provisionError.message,
+                                                                                                                                                                                                                                                                                                                                              },
+                                                                                                                                                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                                                                                                                                                          isSlugConflict ? 409 : 500,
+                                                                                                                                                                                                                                                                                                                                                              );
+                                                                                                                                                                                                                                                                                                                                                                }
+
+                                                                                                                                                                                                                                                                                                                                                                  return jsonResponse({ data: provisionData }, 201);
+                                                                                                                                                                                                                                                                                                                                                                  });
+
+                                                                                                                                                                                                                                                                                                                                                                  function jsonResponse(body: unknown, status: number) {
+                                                                                                                                                                                                                                                                                                                                                                    return new Response(JSON.stringify(body), {
+                                                                                                                                                                                                                                                                                                                                                                        status,
+                                                                                                                                                                                                                                                                                                                                                                            headers: { "Content-Type": "application/json", ...corsHeaders },
+                                                                                                                                                                                                                                                                                                                                                                              });
+                                                                                                                                                                                                                                                                                                                                                                              }
+                                                                                                                                                                                                                                                                                                                                                                              
